@@ -9,6 +9,7 @@ public class BinarySearchTree<TKey, TValue> : BinarySearchTreeBase<TKey, TValue,
     {
         throw new NotImplementedException();
     }
+    
     protected override void OnNodeAdded(BstNode<TKey, TValue> newNode)
     {
         throw new NotImplementedException();

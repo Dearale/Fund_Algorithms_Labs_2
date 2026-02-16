@@ -6,20 +6,17 @@ namespace TreeDataStructures.Core;
 
 public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>? comparer = null) 
     : ITree<TKey, TValue>
-    where TKey : IComparable<TKey>
     where TNode : Node<TKey, TValue, TNode>
 {
     protected TNode? Root;
-    protected readonly IComparer<TKey> Comparer = comparer ?? Comparer<TKey>.Default;
+    public IComparer<TKey> Comparer { get; protected set; } = comparer ?? Comparer<TKey>.Default; // use it to compare Keys
 
     public int Count { get; protected set; }
-
-    #region IDictionary Implementation
-
+    
     public bool IsReadOnly => false;
 
-    public ICollection<TKey> Keys => InOrder().Select(x => x.Key).ToList();
-    public ICollection<TValue> Values => InOrder().Select(x => x.Value).ToList();
+    public ICollection<TKey> Keys => throw new NotImplementedException();
+    public ICollection<TValue> Values => throw new NotImplementedException();
     
     
     public virtual void Add(TKey key, TValue value)
@@ -65,7 +62,6 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
         set => Add(key, value);
     }
 
-    #endregion
     
     #region Hooks
     
@@ -149,32 +145,73 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
     }
     #endregion
     
-    #region Traversal (Iterators)
-
-    public IEnumerable<KeyValuePair<TKey, TValue>> InOrder() => InOrderTraversal(Root);
+    public IEnumerable<TreeEntry<TKey, TValue>>  InOrder() => InOrderTraversal(Root);
     
-    private IEnumerable<KeyValuePair<TKey, TValue>> InOrderTraversal(TNode? node)
+    private IEnumerable<TreeEntry<TKey, TValue>>  InOrderTraversal(TNode? node)
     {
         if (node == null) {  yield break; }
         throw new NotImplementedException();
     }
     
-    public IEnumerable<KeyValuePair<TKey, TValue>> PreOrder() => throw new NotImplementedException();
-    public IEnumerable<KeyValuePair<TKey, TValue>> PostOrder() => throw new NotImplementedException();
-    public IEnumerable<KeyValuePair<TKey, TValue>> InOrderReverse() => throw new NotImplementedException();
-    public IEnumerable<KeyValuePair<TKey, TValue>> PreOrderReverse() => throw new NotImplementedException();
-    public IEnumerable<KeyValuePair<TKey, TValue>> PostOrderReverse() => throw new NotImplementedException();
+    public IEnumerable<TreeEntry<TKey, TValue>>  PreOrder() => throw new NotImplementedException();
+    public IEnumerable<TreeEntry<TKey, TValue>>  PostOrder() => throw new NotImplementedException();
+    public IEnumerable<TreeEntry<TKey, TValue>>  InOrderReverse() => throw new NotImplementedException();
+    public IEnumerable<TreeEntry<TKey, TValue>>  PreOrderReverse() => throw new NotImplementedException();
+    public IEnumerable<TreeEntry<TKey, TValue>>  PostOrderReverse() => throw new NotImplementedException();
+    
+    /// <summary>
+    /// Внутренний класс-итератор. 
+    /// Реализует паттерн Iterator вручную, без yield return (ban).
+    /// </summary>
+    private struct TreeIterator : 
+        IEnumerable<TreeEntry<TKey, TValue>>,
+        IEnumerator<TreeEntry<TKey, TValue>>
+    {
+        // probably add something here
+        private readonly TraversalStrategy _strategy; // or make it template parameter?
+        
+        public IEnumerator<TreeEntry<TKey, TValue>> GetEnumerator() => this;
+        IEnumerator IEnumerable.GetEnumerator() => this;
+        
+        public TreeEntry<TKey, TValue> Current => throw new NotImplementedException();
+        object IEnumerator.Current => Current;
+        
+        
+        public bool MoveNext()
+        {
+            if (_strategy == TraversalStrategy.InOrder)
+            {
+                throw new NotImplementedException();
+            }
+            throw new NotImplementedException("Strategy not implemented");
+        }
+        
+        public void Reset()
+        {
+            throw new NotImplementedException();
+        }
 
-    public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator() => InOrder().GetEnumerator();
+        
+        public void Dispose()
+        {
+            // TODO release managed resources here
+        }
+    }
+    
+    
+    private enum TraversalStrategy { InOrder, PreOrder, PostOrder, InOrderReverse, PreOrderReverse, PostOrderReverse }
+    
+    public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator()
+    {
+        throw new NotImplementedException();
+    }
+    
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
-    #endregion
 
-    #region ICollection Stubs
     public void Add(KeyValuePair<TKey, TValue> item) => Add(item.Key, item.Value);
     public void Clear() { Root = null; Count = 0; }
     public bool Contains(KeyValuePair<TKey, TValue> item) => ContainsKey(item.Key);
     public void CopyTo(KeyValuePair<TKey, TValue>[] array, int arrayIndex) => throw new NotImplementedException();
     public bool Remove(KeyValuePair<TKey, TValue> item) => Remove(item.Key);
-    #endregion
 }
