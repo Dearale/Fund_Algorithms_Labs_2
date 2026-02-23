@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using System.Runtime.InteropServices;
 using TreeDataStructures.Implementations.AVL;
 using TreeDataStructures.Implementations.BST;
 using TreeDataStructures.Implementations.RedBlackTree;
@@ -31,7 +32,7 @@ public abstract class GenericTreeTests<TTree> where TTree : ITree<int, string>, 
         _tree.Add(5, "Five");
         _tree.Add(3, "Three");
         _tree.Add(7, "Seven");
-        
+
         Assert.Multiple(() =>
         {
             Assert.That(_tree.Count, Is.EqualTo(3));
@@ -165,7 +166,8 @@ public abstract class GenericTreeTests<TTree> where TTree : ITree<int, string>, 
         int[] inOrder = _tree.InOrder().Select(x => x.Key).ToArray();
         int[] preOrder = _tree.PreOrder().Select(x => x.Key).ToArray();
         int[] postOrder = _tree.PostOrder().Select(x => x.Key).ToArray();
-        
+
+
         Assert.Multiple(() =>
         {
             Assert.That(inOrder, Is.EqualTo(new[] { 5, 10, 15 }), "InOrder failed");
