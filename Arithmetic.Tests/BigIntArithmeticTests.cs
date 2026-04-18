@@ -62,7 +62,8 @@ public class BigIntArithmeticTests
         {
             string s1 = GenerateLargeRandomString(rnd, rnd.Next(10, 40));
             string s2 = GenerateLargeRandomString(rnd, rnd.Next(1, 10));
-            
+            Console.WriteLine(s1);
+            Console.WriteLine(s2);
             if (s2 is "0" or "-0")
             {
                 s2 = "1";

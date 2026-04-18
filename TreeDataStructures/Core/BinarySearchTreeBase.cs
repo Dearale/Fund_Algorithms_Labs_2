@@ -281,9 +281,10 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
     {
         private readonly TNode? root;
         private readonly int baseDepth;
+        private int depth;
         private readonly TraversalStrategy strategy;
 
-        private Stack<(TNode node, int depth)> stack = new();
+        private TNode? curNode;
         private bool started = false;
         private bool finished = false;
 
@@ -300,88 +301,262 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
             this.root = root;
             this.strategy = strategy;
             this.baseDepth = baseDepth;
+            depth = baseDepth;
         }
         
         public bool MoveNext()
         {
             if (finished) return false;
+            bool res = false;
             switch (strategy)
             {
                 case TraversalStrategy.PreOrder:
-                    return MoveNextPreOrder();
+                    res = MoveNextPreOrder();
+                    break;
                 case TraversalStrategy.InOrder:
-                    return MoveNextInOrder();
+                    res = MoveNextInOrder();
+                    break;
                 case TraversalStrategy.PostOrder:
-                    return MoveNextPostOrder();
+                    res = MoveNextPostOrder();
+                    break;
                 case TraversalStrategy.PreOrderReverse:
-                    return MoveNextPostOrder(flipped: true);
+                    res = MoveNextPostOrderFlipped();
+                    break;
                 case TraversalStrategy.InOrderReverse:
-                    return MoveNextInOrder(flipped: true);
+                    res = MoveNextInOrderFlipped();
+                    break;
                 case TraversalStrategy.PostOrderReverse:
-                    return MoveNextPreOrder(flipped: true);
+                    res = MoveNextPreOrderFlipped();
+                    break;
             }
-
-            throw new NotImplementedException("Strategy not implemented");
+            if (res && curNode != null)
+            {
+                current = new(curNode.Key, curNode.Value, depth);
+            }
+            return res;
         }
 
-        private bool MoveNextPreOrder(bool flipped = false)
+        private bool MoveNextPreOrder()
         {
             if (!started)
             {
                 started = true;
                 if (root != null)
-                    stack.Push((root, baseDepth));
+                {
+                    curNode = root;
+                    depth = baseDepth;
+                    return true;
+                }
             }
 
-            if (stack.Count == 0)
+            if (curNode == null)
             {
                 Finish();
                 return false;
             }
 
-            (TNode node, int depth) = stack.Pop();
-            current = new(node.Key, node.Value, depth);
-
-            if (flipped)
+            if (curNode.Left != null)
             {
-                if (node.Left != null) stack.Push((node.Left, depth + 1));
-                if (node.Right != null) stack.Push((node.Right, depth + 1));
-            } else
-            {
-                if (node.Right != null) stack.Push((node.Right, depth + 1));
-                if (node.Left != null) stack.Push((node.Left, depth + 1));
+                curNode = curNode.Left;
+                depth += 1;
+                return true;
             }
+            if (curNode.Right != null)
+            {
+                curNode = curNode.Right;
+                depth += 1;
+                return true;
+            }
+            while (true)
+            {
+                if (curNode == root)
+                {
+                    depth = baseDepth;
+                    Finish();
+                    return false;
+                }
 
-            return true;
+                if (curNode!.IsLeftChild && curNode.Parent!.Right != null)
+                {
+                    curNode = curNode.Parent.Right;
+                    return true;
+                }
+
+                curNode = curNode.Parent;
+                depth--;
+            }
         }
 
-        public bool MoveNextInOrder(bool flipped = false)
+        private bool MoveNextPreOrderFlipped()
         {
             if (!started)
             {
                 started = true;
-                if (flipped) PushRightChain(root, depth: baseDepth);
-                else PushLeftChain(root, depth: baseDepth);
+                if (root != null)
+                {
+                    curNode = root;
+                    depth = baseDepth;
+                    return true;
+                }
             }
 
-            if (stack.Count == 0)
+            if (curNode == null)
             {
                 Finish();
                 return false;
             }
 
-            (TNode node, int depth) = stack.Pop();
-            current = new(node.Key, node.Value, depth);
-
-            if (flipped)
+            if (curNode.Right != null)
             {
-                if (node.Left != null) PushRightChain(node.Left, depth + 1);
+                curNode = curNode.Right;
+                depth += 1;
+                return true;
+            }
+            if (curNode.Left != null)
+            {
+                curNode = curNode.Left;
+                depth += 1;
+                return true;
+            }
+            while (true)
+            {
+                if (curNode == root)
+                {
+                    depth = baseDepth;
+                    Finish();
+                    return false;
+                }
+
+                if (curNode!.IsRightChild && curNode.Parent!.Left != null)
+                {
+                    curNode = curNode.Parent.Left;
+                    return true;
+                }
+
+                curNode = curNode.Parent;
+                depth--;
+            }
+        }
+
+        public bool MoveNextInOrder()
+        {
+            if (!started)
+            {
+                started = true;
+                if (root != null)
+                {
+                    curNode = root;
+                    while (curNode.Left != null)
+                    {
+                        depth++;
+                        curNode = curNode.Left;
+                    }
+                    return true;
+                } else
+                {
+                    Finish();
+                    return false;
+                }
+            }
+
+            if (curNode == null)
+            {
+                Finish();
+                return false;
+            }
+            if (curNode.Right == null)
+            {
+                while (true)
+                {
+                    if (curNode!.IsLeftChild)
+                    {
+                        curNode = curNode.Parent;
+                        depth--;
+                        return true;
+                    } else if (curNode.IsRightChild)
+                    {
+                        curNode = curNode.Parent;
+                        depth--;
+                    }
+                    if (curNode == root)
+                    {
+                        depth = baseDepth;
+                        return false;
+                    }
+                }
+            } else
+            {
+                curNode = curNode.Right;
+                depth++;
+                while (curNode.Left != null)
+                {
+                    curNode = curNode.Left;
+                    depth++;
+                }
+            }
+            return true;
+        }
+
+        public bool MoveNextInOrderFlipped()
+        {
+            if (!started)
+            {
+                started = true;
+                if (root != null)
+                {
+                    curNode = root;
+                    while (curNode.Right != null)
+                    {
+                        depth++;
+                        curNode = curNode.Right;
+                    }
+                    return true;
+                }
+                else
+                {
+                    Finish();
+                    return false;
+                }
+            }
+
+            if (curNode == null)
+            {
+                Finish();
+                return false;
+            }
+
+            if (curNode.Left == null)
+            {
+                while (true)
+                {
+                    if (curNode!.IsRightChild)
+                    {
+                        curNode = curNode.Parent;
+                        depth--;
+                        return true;
+                    }
+                    else if (curNode.IsLeftChild)
+                    {
+                        curNode = curNode.Parent;
+                        depth--;
+                    }
+                    if (curNode == root)
+                    {
+                        depth = baseDepth;
+                        return false;
+                    }
+                }
             }
             else
             {
-                if (node.Right != null) PushLeftChain(node.Right, depth + 1);
+                curNode = curNode.Left;
+                depth++;
+                while (curNode.Right != null)
+                {
+                    curNode = curNode.Right;
+                    depth++;
+                }
             }
-
             return true;
         }
 
@@ -390,60 +565,115 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
             if (!started)
             {
                 started = true;
-                if (flipped)
+                if (root != null)
                 {
-                    if (root != null) PushRightLeftChain(root, baseDepth);
+                    SetCurNodeToLeftRightLeaf(root);
+                    return true;
                 } else
                 {
-                    if (root != null) PushLeftRightChain(root, baseDepth);
+                    return false;
                 }
             }
 
-            if (stack.Count == 0)
+            if (curNode == null)
             {
                 Finish();
                 return false;
             }
 
-            (TNode node, int depth) = stack.Pop();
-            current = new(node.Key, node.Value, depth);
+            if (curNode == root) return false;
+            if (curNode.IsLeftChild)
+            {
+                if (curNode.Parent!.Right == null)
+                {
+                    curNode = curNode.Parent;
+                    depth--;
+                    return true;
+                } else
+                {
+                    SetCurNodeToLeftRightLeaf(curNode.Parent.Right);
+                    return true;
 
-            if (flipped)
+                }
+            } else if (curNode.IsRightChild)
             {
-                if (node.IsRightChild) PushRightLeftChain(node.Parent!.Left, depth);
-            } else
-            {
-                if (node.IsLeftChild) PushLeftRightChain(node.Parent!.Right, depth);
+                curNode = curNode.Parent;
+                depth--;
+                return true;
             }
-
             return true;
         }
 
-        public void PushLeftRightChain(TNode? node, int depth)
+
+        private bool MoveNextPostOrderFlipped()
         {
-            while (node != null)
+            if (!started)
             {
-                stack.Push((node, depth));
-                depth++;
+                started = true;
+                if (root != null)
+                {
+                    SetCurNodeToRightLeftLeaf(root);
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+
+            if (curNode == null)
+            {
+                Finish();
+                return false;
+            }
+
+            if (curNode == root) return false;
+
+            if (curNode.IsRightChild)
+            {
+                if (curNode.Parent!.Left == null)
+                {
+                    curNode = curNode.Parent;
+                    depth--;
+                    return true;
+                }
+                else
+                {
+                    SetCurNodeToRightLeftLeaf(curNode.Parent.Left);
+                    return true;
+
+                }
+            }
+            else if (curNode.IsLeftChild)
+            {
+                curNode = curNode.Parent;
+                depth--;
+                return true;
+            }
+            return true;
+        }
+        public void SetCurNodeToLeftRightLeaf(TNode node)
+        {
+            while (true)
+            {
                 if (node.Left != null)
                 {
                     node = node.Left;
-                } else if (node.Right != null)
+                }
+                else if (node.Right != null)
                 {
                     node = node.Right;
-                } else
-                {
-                    node = null;
                 }
+                else break;
+                depth++;
             }
+            curNode = node;
         }
 
-        public void PushRightLeftChain(TNode? node, int depth)
+        public void SetCurNodeToRightLeftLeaf(TNode node)
         {
-            while (node != null)
+            while (true)
             {
-                stack.Push((node, depth));
-                depth++;
                 if (node.Right != null)
                 {
                     node = node.Right;
@@ -452,31 +682,10 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
                 {
                     node = node.Left;
                 }
-                else
-                {
-                    node = null;
-                }
-            }
-        }
-
-        public void PushLeftChain(TNode? node, int depth)
-        {
-            while (node != null)
-            {
-                stack.Push((node, depth));
+                else break;
                 depth++;
-                node = node.Left;
             }
-        }
-
-        public void PushRightChain(TNode? node, int depth)
-        {
-            while (node != null)
-            {
-                stack.Push((node, depth));
-                depth++;
-                node = node.Right;
-            }
+            curNode = node;
         }
 
         private void Finish()
@@ -487,7 +696,8 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
 
         public void Reset()
         {
-            stack.Clear();
+            depth = baseDepth;
+            curNode = null;
             started = false;
             finished = false;
             current = default;
@@ -496,7 +706,7 @@ public abstract class BinarySearchTreeBase<TKey, TValue, TNode>(IComparer<TKey>?
         
         public void Dispose()
         {
-            stack.Clear();
+            curNode = null;
             finished = true;
             current = default;
         }

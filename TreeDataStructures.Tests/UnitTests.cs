@@ -29,7 +29,7 @@ public class BinarySearchTreeTests : GenericTreeTests<BinarySearchTree<int, stri
         int[] inOrder = Tree.InOrder().Select(x => x.Key).ToArray();
         int[] preOrder = Tree.PreOrder().Select(x => x.Key).ToArray();
         int[] postOrder = Tree.PostOrder().Select(x => x.Key).ToArray();
-        
+
         Assert.Multiple(() =>
         {
             Assert.That(inOrder, Is.EqualTo(new[] { 5, 10, 15 }), "InOrder failed");
