@@ -5,7 +5,6 @@ using TreeDataStructures.Implementations.BST;
 namespace TreeDataStructures.Implementations.Treap;
 
 public class Treap<TKey, TValue> : BinarySearchTreeBase<TKey, TValue, TreapNode<TKey, TValue>>
-    where TKey : IComparable<TKey>
 {
     /// <summary>
     /// Разрезает дерево с корнем <paramref name="root"/> на два поддерева:

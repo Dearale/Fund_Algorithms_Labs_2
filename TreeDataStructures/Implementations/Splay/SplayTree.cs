@@ -4,7 +4,6 @@ using TreeDataStructures.Implementations.BST;
 namespace TreeDataStructures.Implementations.Splay;
 
 public class SplayTree<TKey, TValue> : BinarySearchTree<TKey, TValue>
-    where TKey : IComparable<TKey>
 {
     protected override BstNode<TKey, TValue> CreateNode(TKey key, TValue value)
         => new(key, value);

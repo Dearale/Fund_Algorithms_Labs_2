@@ -12,7 +12,7 @@ public class BigIntArithmeticTests
     [Category("Base")]
     public void Test_Addition_Random()
     {
-        Random rnd = new();
+        Random rnd = new(52);
         for (int i = 0; i < 100; i++)
         {
             long valA = (long)rnd.Next() * rnd.Next();
@@ -32,7 +32,7 @@ public class BigIntArithmeticTests
     [Category("Base")]
     public void Test_Comparison_Logic()
     {
-        Random rnd = new();
+        Random rnd = new(52);
         for (int i = 0; i < 100; i++)
         {
             string s1 = GenerateLargeRandomString(rnd, rnd.Next(1, 50));
@@ -57,7 +57,7 @@ public class BigIntArithmeticTests
     [Category("Base")]
     public void Test_Division_Random()
     {
-        Random rnd = new Random();
+        Random rnd = new (52);
         for (int i = 0; i < 50; i++)
         {
             string s1 = GenerateLargeRandomString(rnd, rnd.Next(10, 40));
@@ -92,7 +92,7 @@ public class BigIntArithmeticTests
     [Category("Base")]
     public void Test_UnaryMinus_And_Modulo()
     {
-        Random rnd = new ();
+        Random rnd = new (52);
         for (int i = 0; i < 50; i++)
         {
             string s1 = GenerateLargeRandomString(rnd, rnd.Next(5, 20));
@@ -141,7 +141,7 @@ public class BigIntArithmeticTests
     [Category("Bitwise")]
     public void Test_Bitwise_Logic()
     {
-        Random rnd = new();
+        Random rnd = new(52);
         for (int i = 0; i < 50; i++)
         {
             string s1 = GenerateLargeRandomString(rnd, rnd.Next(5, 15));
@@ -168,7 +168,7 @@ public class BigIntArithmeticTests
     [Category("Bitwise")]
     public void Test_Shifts()
     {
-        Random rnd = new();
+        Random rnd = new(52);
         for (int i = 0; i < 50; i++)
         {
             string s1 = GenerateLargeRandomString(rnd, rnd.Next(1, 20));
@@ -259,8 +259,9 @@ public class BigIntArithmeticTests
         Assert.That(myRes.ToString(), Is.EqualTo(expected.ToString()));
     }
     
+    // TODO: more tests for multiplications cases, one day
     
-    private string GenerateLargeRandomString(Random rnd, int length)
+    private static string GenerateLargeRandomString(Random rnd, int length)
     {
         char[] digits = new char[length];
         digits[0] = (char)rnd.Next('1', '9' + 1);

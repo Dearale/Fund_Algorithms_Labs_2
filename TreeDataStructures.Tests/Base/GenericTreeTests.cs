@@ -156,17 +156,18 @@ public abstract class GenericTreeTests<TTree> where TTree : ITree<int, string>, 
         for (int i = 0; i < 500; i++)
         {
             int val = random.Next(-1000, 1000);
-            if (inserted.Add(val)) Tree.Add(val, "v");
+            if (inserted.Add(val))
+            {
+                Tree.Add(val, "v");
+            }
         }
         
         Assert.That(Tree.Count, Is.EqualTo(inserted.Count));
         
-        // Проверка сортировки
         List<int> sortedKeys = Tree.InOrder().Select(x => x.Key).ToList();
         Assert.That(sortedKeys, Is.Ordered);
         Assert.That(sortedKeys, Is.EquivalentTo(inserted));
         
-        // Удаляем половину
         List<int> toRemove = inserted.Take(250).ToList();
         foreach (int k in toRemove)
         {
@@ -178,8 +179,69 @@ public abstract class GenericTreeTests<TTree> where TTree : ITree<int, string>, 
         Assert.That(Tree.InOrder().Select(x => x.Key), Is.Ordered);
     }
     
+    
+    #region Нагрузочный Тест
+    
+    [Test]
+    [TestCase(10000, "Random")] 
+    [TestCase(1000, "Sorted")]
+    [TestCase(1000, "ReverseSorted")]
+    public void StressTest_Consistency(int count, string mode)
+    {
+        Dictionary<int, string> reference = new();
+        Random random = new Random(52);
+
+        for (int i = 0; i < count; i++)
+        {
+            int key = mode switch
+            {
+                "Random" => random.Next(-100000, 100000),
+                "Sorted" => i,
+                "ReverseSorted" => count - i,
+                _ => i
+            };
+
+            if (reference.TryAdd(key, $"val_{key}"))
+            {
+                Tree.Add(key, $"val_{key}");
+            }
+        }
+
+        Assert.That(Tree.Count, Is.EqualTo(reference.Count), "Count mismatch after insertion");
+
+        List<int> inOrder = Tree.InOrder().Select(x => x.Key).ToList();
+        Assert.That(inOrder, Is.Ordered.Ascending, "InOrder traversal is not sorted");
+        Assert.That(inOrder.Count, Is.EqualTo(reference.Count));
+
+        List<int> reverseOrder = Tree.InOrderReverse().Select(x => x.Key).ToList();
+        Assert.That(reverseOrder, Is.Ordered.Descending, "InOrderReverse traversal is not sorted descending");
+        
+        List<int> reversedInOrder = inOrder.ToList();
+        reversedInOrder.Reverse();
+        Assert.That(reverseOrder, Is.EqualTo(reversedInOrder), "Reverse order is not mirror of InOrder");
+
+        List<int> keysToRemove = reference.Keys.OrderBy(_ => random.Next()).Take(reference.Count / 2).ToList();
+        
+        foreach (int key in keysToRemove)
+        {
+            Assert.That(Tree.Remove(key), Is.True, $"Failed to remove key {key}");
+            reference.Remove(key);
+        }
+
+        Assert.That(Tree.Count, Is.EqualTo(reference.Count), "Count mismatch after deletion");
+        
+        List<int> finalKeys = Tree.InOrder().Select(x => x.Key).ToList();
+        Assert.That(finalKeys, Is.Ordered.Ascending);
+        Assert.That(finalKeys, Is.EquivalentTo(reference.Keys));
+    }
+    
+    #endregion Нагрузочный Тест
+    
     #region Splay Tests
     
+    // TODO: for future repository update
+    //       delete reflection, use virtual call instead for verification
+    //       so add some methods in base tree
     private void AssertSplayProperty(int expectedKey)
     {
         if (!Tree.GetType().Name.StartsWith("SplayTree"))
