@@ -15,8 +15,20 @@ public sealed class BetterBigInteger : IBigInteger
     
     public bool IsNegative => _signBit == 1;
     private const ulong BaseValue = (ulong)uint.MaxValue + 1;
-    private const int NumOfBits = 32;
-    
+    private const int NumOfBits = sizeof(uint) * 8;
+
+    private const int HalfDigit = NumOfBits / 2;
+    private const uint RightHalfMask = (1 << HalfDigit) - 1;
+    public const int SimpleMultThreshold = 8;
+
+    private static readonly IMultiplier SimpleMultiplier = new SimpleMultiplier();
+    private static readonly IMultiplier KaratsubaMultiplier = new KaratsubaMultiplier();
+    private static readonly IMultiplier FftMultiplier = new FftMultiplier();
+
+    private const int KaratsubaThreshold = 32;
+    private const int FftThreshold = 256;
+
+
     /// От массива цифр (little endian)
     public BetterBigInteger(uint[] digits, bool isNegative = false)
     {
@@ -64,7 +76,7 @@ public sealed class BetterBigInteger : IBigInteger
         for (int i = start; i < value.Length; i++)
         {
             int digitValue = GetValueFromDigit(value[i]);
-            if (digitValue < 0)
+            if (digitValue < 0 || digitValue >= radix)
             {
                 throw new FormatException($"Invalid digit {value[i]} for radix {radix}.");
             }
@@ -125,9 +137,10 @@ public sealed class BetterBigInteger : IBigInteger
     }
 
     private int CompareMagnitudes(IBigInteger other)
+        => CompareMagnitudes(this.GetDigits(), other.GetDigits());
+
+    private static int CompareMagnitudes(ReadOnlySpan<uint> thisDigits, ReadOnlySpan<uint> otherDigits)
     {
-        ReadOnlySpan<uint> thisDigits = this.GetDigits();
-        ReadOnlySpan<uint> otherDigits = other.GetDigits();
         if (thisDigits.Length != otherDigits.Length)
         {
             return thisDigits.Length < otherDigits.Length ? -1 : 1;
@@ -190,22 +203,35 @@ public sealed class BetterBigInteger : IBigInteger
         int minLength = Math.Min(aDigits.Length, bDigits.Length);
         int i = 0;
         for (; i < minLength; i++)
-        {
-            ulong cur = (ulong)aDigits[i] + bDigits[i] + carry;
-            sum[i] = (uint)cur;
-            carry = (uint)(cur >> 32);
-        }
+            sum[i] = AddDigits(aDigits[i], bDigits[i], ref carry);
+
         ReadOnlySpan<uint> leftOver = aDigits.Length >= bDigits.Length ? aDigits : bDigits;
         for (; i < leftOver.Length; i++)
-        {
-            ulong cur = (ulong)leftOver[i] + carry;
-            sum[i] = (uint)cur;
-            carry = (uint)(cur >> 32);
-        }
+            sum[i] = AddDigits(leftOver[i], 0, ref carry);
 
         if (carry > 0) sum[sum.Length - 1] = carry;
 
         return sum;
+    }
+
+    private static uint AddDigits(uint a, uint b, ref uint carry)
+    {
+        uint aRightHalf = a & RightHalfMask;
+        uint bRightHalf = b & RightHalfMask;
+        uint rightHalf = AddHalfDigits(aRightHalf, bRightHalf, ref carry);
+
+        uint aLeftHalf = a >> HalfDigit;
+        uint bLeftHalf = b >> HalfDigit;
+
+        uint leftHalf = AddHalfDigits(aLeftHalf, bLeftHalf, ref carry) << HalfDigit;
+        return leftHalf + rightHalf;
+    }
+
+    private static uint AddHalfDigits(uint a, uint b, ref uint carry)
+    {
+        uint res = a + b + carry;
+        carry = res >> HalfDigit;
+        return res & RightHalfMask;
     }
 
     private static uint[] AddNumber(ReadOnlySpan<uint> aDigits, uint digit)
@@ -213,11 +239,7 @@ public sealed class BetterBigInteger : IBigInteger
         uint[] sum = new uint[aDigits.Length + 1];
         uint carry = digit;
         for (int i = 0; i < aDigits.Length; i++)
-        {
-            ulong cur = (ulong)aDigits[i] + carry;
-            sum[i] = (uint)cur;
-            carry = (uint)(cur >> 32);
-        }
+            sum[i] = AddDigits(aDigits[i], 0, ref carry);
 
         if (carry > 0) sum[sum.Length - 1] = carry;
 
@@ -234,31 +256,13 @@ public sealed class BetterBigInteger : IBigInteger
         int i = 0;
         for (; i < bDigits.Length; i++)
         {
-            ulong cur;
-            if (aDigits[i] < (ulong)bDigits[i] + borrow)
-            {
-                cur = aDigits[i] + BaseValue - bDigits[i] - borrow;
-                borrow = 1;
-            } else
-            {
-                cur = aDigits[i] - borrow - bDigits[i];
-                borrow = 0;
-            }
-            sum[i] = (uint)cur;
+            sum[i] = aDigits[i] - borrow - bDigits[i];
+            borrow = (aDigits[i] < borrow || (aDigits[i] - borrow < bDigits[i])) ? 1u : 0u;
         }
         for (; i < aDigits.Length; i++)
         {
-            ulong cur;
-            if (aDigits[i] < borrow)
-            {
-                cur = aDigits[i] + BaseValue - borrow;
-                borrow = 1;
-            } else
-            {
-                cur = aDigits[i] - borrow;
-                borrow = 0;
-            }
-            sum[i] = (uint)cur;
+            sum[i] = aDigits[i] - borrow;
+            borrow = aDigits[i] < borrow ? 1u : 0u;
         }
 
         return sum;
@@ -270,18 +274,8 @@ public sealed class BetterBigInteger : IBigInteger
         uint borrow = digit;
         for (int i = 0; i < aDigits.Length; i++)
         {
-            ulong cur;
-            if (aDigits[i] < borrow)
-            {
-                cur = aDigits[i] + BaseValue - borrow;
-                borrow = 1;
-            }
-            else
-            {
-                cur = aDigits[i] - borrow;
-                borrow = 0;
-            }
-            sum[i] = (uint)cur;
+            sum[i] = aDigits[i] - borrow;
+            borrow = (uint)(aDigits[i] < borrow ? 1 : 0);
         }
 
         return sum;
@@ -294,60 +288,28 @@ public sealed class BetterBigInteger : IBigInteger
         int i = 0;
         for (; i < bDigits.Length; i++)
         {
-            ulong cur;
-            if (aDigits[i] < (ulong)bDigits[i] + borrow)
-            {
-                cur = aDigits[i] + BaseValue - bDigits[i] - borrow;
-                borrow = 1;
-            }
-            else
-            {
-                cur = aDigits[i] - borrow - bDigits[i];
-                borrow = 0;
-            }
-            aDigits[i] = (uint)cur;
+            uint new_borrow = (aDigits[i] < borrow || aDigits[i] - borrow < bDigits[i]) ? 1u : 0u;
+            aDigits[i] = aDigits[i] - borrow - bDigits[i];
+            borrow = new_borrow;
         }
         for (; i < aDigits.Length; i++)
         {
-            ulong cur;
-            if (aDigits[i] < borrow)
-            {
-                cur = aDigits[i] + BaseValue - borrow;
-                borrow = 1;
-            }
-            else
-            {
-                cur = aDigits[i] - borrow;
-                borrow = 0;
-            }
-            aDigits[i] = (uint)cur;
+            uint new_borrow = aDigits[i] < borrow ? 1u : 0u;
+            aDigits[i] -= borrow;
+            borrow = new_borrow;
         }
     }
 
 
     public static BetterBigInteger operator -(BetterBigInteger a, BetterBigInteger b)
-    {
-        uint[] sum;
-        if (a.IsNegative != b.IsNegative)
-        {
-            sum = AddMagnitudes(a, b);
-            return new(sum, a.IsNegative);
-        }
-        int magnitudesComparison = a.CompareMagnitudes(b);
-        if (magnitudesComparison == 0) return new("0", 10);
-        if (magnitudesComparison < 0)
-        {
-            sum = SubMagnitudes(b, a);
-            return new(sum, !a.IsNegative);
-        }
-        sum = SubMagnitudes(a, b);
-        return new(sum, a.IsNegative);
-    }
-
+        => a + (-b);
     public static BetterBigInteger operator -(BetterBigInteger a)
     {
         return new(a.GetDigits().ToArray(), !a.IsNegative);
     }
+
+    public static BetterBigInteger Abs(BetterBigInteger a)
+        => new(a.GetDigits().ToArray());
 
     public static BetterBigInteger operator /(BetterBigInteger a, BetterBigInteger b)
     {
@@ -365,103 +327,86 @@ public sealed class BetterBigInteger : IBigInteger
             return new([1], a.IsNegative != b.IsNegative);
         }
 
-        if (bDigits.Length == 1)
-        {
-            return DivideByOneWord(a, b);
-        } else
-        {
-            return DivideAlgorithm(a, b);
-        }
-    }
+        if (a.IsNegative == b.IsNegative)
+            return DivideAlgorithm(Abs(a), Abs(b));
 
-    private static BetterBigInteger DivideByOneWord(BetterBigInteger a, BetterBigInteger b)
-    {
-        ReadOnlySpan<uint> aDigits = a.GetDigits();
-        uint bDigit = b.GetDigits()[0];
-
-        ulong carry = 0;
-        uint[] res = new uint[aDigits.Length];
-        for (int i = aDigits.Length - 1; i >= 0; i--)
-        {
-            ulong cur = (carry << 32) | aDigits[i];
-            carry = cur % bDigit;
-            res[i] = (uint)(cur / bDigit);
-        }
-
-        return new(res, a.IsNegative != b.IsNegative);
+        return -DivideAlgorithm(Abs(a), Abs(b));
     }
 
     private static BetterBigInteger DivideAlgorithm(BetterBigInteger a, BetterBigInteger b)
-        => new(DivideAlgorithm(a.GetDigits(), b.GetDigits(), out _), a.IsNegative != b.IsNegative);
+        => DivideAlgorithm(a, b, out _);
 
-    private static uint[] DivideAlgorithm(ReadOnlySpan<uint> aDigitsInitial, ReadOnlySpan<uint> bDigitsInitial, out uint[] rem)
+    private static BetterBigInteger DivideAlgorithm(BetterBigInteger a, BetterBigInteger b, out BetterBigInteger rem)
     {
-        int shift = BitOperations.LeadingZeroCount(bDigitsInitial[bDigitsInitial.Length - 1]);
-        uint[] aDigits = ShiftLeftSigned(aDigitsInitial, shift);
-        uint[] bDigits = ShiftLeftSigned(bDigitsInitial, shift);
-        Array.Resize(ref aDigits, aDigits.Length + 1);
-        aDigits[aDigits.Length - 1] = 0;
+        ReadOnlySpan<uint> aDigits = a.GetDigits();
+        ReadOnlySpan<uint> bDigits = b.GetDigits();
+        BetterBigInteger remainder = new([0]);
 
-        int resDigitsLen = aDigits.Length - bDigits.Length;
-        uint[] res = new uint[resDigitsLen];
-
-        ulong bDigit1 = bDigits[bDigits.Length - 1];
-        ulong bDigit2 = bDigits[bDigits.Length - 2];
-        for (int i = resDigitsLen - 1; i >= 0; i--)
+        int curDividendIndex = aDigits.Length - 1;
+        while (remainder < b && curDividendIndex != -1)
         {
-            ulong aDigit1 = aDigits[i + bDigits.Length];
-            ulong aDigit2 = aDigits[i + bDigits.Length - 1];
-            ulong aDigit3 = aDigits[i + bDigits.Length - 2];
-
-            ulong numerator = aDigit1 * BaseValue + aDigit2;
-            ulong quotient = numerator / bDigit1;
-            ulong remainder = numerator % bDigit1;
-
-            while (quotient == BaseValue || (quotient * bDigit2) > (remainder * BaseValue + aDigit3))
-            {
-                quotient--;
-                remainder += bDigit1;
-                if (remainder >= BaseValue) break;
-            }
-
-            long borrow = 0;
-            ulong carry = 0;
-
-            for (int j = 0; j < bDigits.Length; j++)
-            {
-                ulong cur = quotient * bDigits[i] + carry;
-                carry = cur >> 32;
-
-                ulong sub = (ulong)aDigits[i + j] - (uint)cur - (ulong)borrow;
-                aDigits[i + j] = (uint)sub;
-                borrow = sub > uint.MaxValue ? 1 : 0;
-            }
-
-            ulong subLast = (ulong)aDigits[i + bDigits.Length] - carry - (ulong)borrow;
-            aDigits[i + bDigits.Length] = (uint)subLast;
-
-            if (subLast > uint.MaxValue)
-            {
-                quotient--;
-
-                ulong carry2 = 0;
-                for (int j = 0; j < bDigits.Length; j++)
-                {
-                    ulong sum = (ulong)aDigits[i + j] + bDigits[j] + carry2;
-                    aDigits[i + j] = (uint)sum;
-                    carry2 = sum >> 32;
-                }
-                aDigits[i + bDigits.Length] = (uint)((ulong)aDigits[i + bDigits.Length] + carry2);
-            }
-
-            res[i] = (uint)quotient;
+            remainder.AppendDigit(aDigits[curDividendIndex]);
+            curDividendIndex--;
         }
 
-        rem = new uint[bDigitsInitial.Length];
-        Array.Copy(aDigits, rem, bDigitsInitial.Length);
-        rem = ShiftLeftSigned(rem, -shift);
+        BetterBigInteger quotient = new([0]);
+        while (remainder >= b)
+        {
+            uint curQuotient = BinarySearchQuotient(remainder, b);
+            quotient.AppendDigit(curQuotient);
+
+            BetterBigInteger betterCurQuotient = new([curQuotient]);
+
+            remainder -= betterCurQuotient * b;
+
+            while (remainder < b && curDividendIndex != -1)
+            {
+                remainder.AppendDigit(aDigits[curDividendIndex]);
+                curDividendIndex--;
+
+                if (remainder < b)
+                    quotient.AppendDigit(0);
+            }
+        }
+
+        rem = remainder;
+        return quotient;
+    }
+
+    private static uint BinarySearchQuotient(BetterBigInteger carry, BetterBigInteger divisor)
+    {
+        uint l = 1;
+        uint r = uint.MaxValue;
+        uint res = l;
+        while (l <= r)
+        {
+            uint m = l + (r - l) / 2;
+            BetterBigInteger M = new BetterBigInteger([m]);
+            BetterBigInteger mult = divisor * M;
+            if (mult < carry)
+            {
+                res = m;
+                l = m + 1;
+            }
+            else if (mult == carry) return m;
+            else r = m - 1;
+        }
 
         return res;
+    }
+
+    private void AppendDigit(uint digit)
+    {
+        if (_smallValue == 0 && _data == null)
+        {
+            _smallValue = digit;
+            return;
+        }
+
+        uint[] newDigits = new uint[GetDigits().Length + 1];
+        newDigits[0] = digit;
+        Array.Copy(GetDigits().ToArray(), 0, newDigits, 1, GetDigits().Length);
+        _data = newDigits;
     }
 
     public static BetterBigInteger operator %(BetterBigInteger a, BetterBigInteger b)
@@ -479,38 +424,29 @@ public sealed class BetterBigInteger : IBigInteger
         {
             return new("0", 10);
         }
+        if (a.IsNegative)
+            return -GetRemainderDivideAlgorithm(Abs(a), Abs(b));
 
-        if (bDigits.Length == 1)
-        {
-            return GetRemainderDivByOneWord(a, b);
-        }
-        else
-        {
-            return GetRemainderDivideAlgorithm(a, b);
-        }
-    }
-
-    private static BetterBigInteger GetRemainderDivByOneWord(BetterBigInteger a, BetterBigInteger b)
-    {
-        ReadOnlySpan<uint> aDigits = a.GetDigits();
-        uint bDigit = b.GetDigits()[0];
-
-        ulong carry = 0;
-        for (int i = aDigits.Length - 1; i >= 0; i--)
-            carry = ((carry << 32) | aDigits[i]) % bDigit;
-
-        return new([(uint)carry], a.IsNegative);
+        return GetRemainderDivideAlgorithm(Abs(a), Abs(b));
     }
 
     private static BetterBigInteger GetRemainderDivideAlgorithm(BetterBigInteger a, BetterBigInteger b)
     {
-        DivideAlgorithm(a.GetDigits(), b.GetDigits(), out uint[] rem);
-        return new(rem, a.IsNegative);
+        DivideAlgorithm(a, b, out BetterBigInteger rem);
+        return rem;
     }
 
     public static BetterBigInteger operator *(BetterBigInteger a, BetterBigInteger b)
     {
-        IMultiplier multiplier = new SimpleMultiplier();
+        IMultiplier multiplier;
+        int maxLen = Math.Max(a.GetDigits().Length, b.GetDigits().Length);
+
+        if (maxLen >= FftThreshold)
+            multiplier = FftMultiplier;
+        else if (maxLen >= KaratsubaThreshold)
+            multiplier = KaratsubaMultiplier;
+        else
+            multiplier = SimpleMultiplier;
         return multiplier.Multiply(a, b);
     }
     
@@ -521,15 +457,31 @@ public sealed class BetterBigInteger : IBigInteger
             : AddNumber(a.GetDigits(), 1), !a.IsNegative);
     }
 
-    public static BetterBigInteger operator &(BetterBigInteger a, BetterBigInteger b)
+    private enum BitwiseOperation
+    {
+        And, Or, Xor
+    }
+
+    private static BetterBigInteger ApplyBitwise(BetterBigInteger a, BetterBigInteger b, BitwiseOperation op)
     {
         int length = Math.Max(a.GetDigits().Length, b.GetDigits().Length) + 1;
         ReadOnlySpan<uint> aDigits = ToTwosComplement(a, length);
         ReadOnlySpan<uint> bDigits = ToTwosComplement(b, length);
 
         uint[] res = new uint[length];
-        for (int i = 0; i < length; i++)
-            res[i] = aDigits[i] & bDigits[i];
+        if (op == BitwiseOperation.And)
+        {
+            for (int i = 0; i < length; i++)
+                res[i] = aDigits[i] & bDigits[i];
+        } else if (op == BitwiseOperation.Or)
+        {
+            for (int i = 0; i < length; i++)
+                res[i] = aDigits[i] | bDigits[i];
+        } else if (op == BitwiseOperation.Xor)
+        {
+            for (int i = 0; i < length; i++)
+                res[i] = aDigits[i] ^ bDigits[i];
+        }
 
         return FromTwosComplement(res);
     }
@@ -540,10 +492,7 @@ public sealed class BetterBigInteger : IBigInteger
 
         uint[] res = new uint[length];
 
-        for (int i = 0; i < aDigits.Length; i++)
-        {
-            res[i] = aDigits[i];
-        }
+        aDigits.CopyTo(res);
 
         if (!a.IsNegative) return res;
 
@@ -570,30 +519,15 @@ public sealed class BetterBigInteger : IBigInteger
         return new(AddNumberInPlace(res, 1), isNegative: true);
     }
 
+    public static BetterBigInteger operator &(BetterBigInteger a, BetterBigInteger b)
+        => ApplyBitwise(a, b, BitwiseOperation.And);
+
     public static BetterBigInteger operator |(BetterBigInteger a, BetterBigInteger b)
-    {
-        int length = Math.Max(a.GetDigits().Length, b.GetDigits().Length) + 1;
-        ReadOnlySpan<uint> aDigits = ToTwosComplement(a, length);
-        ReadOnlySpan<uint> bDigits = ToTwosComplement(b, length);
+        => ApplyBitwise(a, b, BitwiseOperation.Or);
 
-        uint[] res = new uint[length];
-        for (int i = 0; i < length; i++)
-            res[i] = aDigits[i] | bDigits[i];
-
-        return FromTwosComplement(res);
-    }
     public static BetterBigInteger operator ^(BetterBigInteger a, BetterBigInteger b)
-    {
-        int length = Math.Max(a.GetDigits().Length, b.GetDigits().Length) + 1;
-        ReadOnlySpan<uint> aDigits = ToTwosComplement(a, length);
-        ReadOnlySpan<uint> bDigits = ToTwosComplement(b, length);
+        => ApplyBitwise(a, b, BitwiseOperation.Xor);
 
-        uint[] res = new uint[length];
-        for (int i = 0; i < length; i++)
-            res[i] = aDigits[i] ^ bDigits[i];
-
-        return FromTwosComplement(res);
-    }
     public static BetterBigInteger operator <<(BetterBigInteger a, int shift) => ShiftLeftSigned(a, shift);
     public static BetterBigInteger operator >>(BetterBigInteger a, int shift) => ShiftLeftSigned(a, -shift);
 
@@ -686,9 +620,7 @@ public sealed class BetterBigInteger : IBigInteger
         uint carry = digit;
         for (int i = 0; i < aDigits.Length; i++)
         {
-            ulong cur = aDigits[i] + carry;
-            aDigits[i] = (uint)cur;
-            carry = (uint)(cur >> 32);
+            aDigits[i] = AddDigits(aDigits[i], 0, ref carry);
         }
 
         if (carry > 0)
@@ -707,17 +639,12 @@ public sealed class BetterBigInteger : IBigInteger
         int i = 0;
         for (; i < bDigits.Length; i++)
         {
-            ulong cur = (ulong)aDigits[i + startIndex] + bDigits[i] + carry;
-            aDigits[i + startIndex] = (uint)cur;
-            carry = (uint)(cur >> 32);
+            aDigits[i + startIndex] = AddDigits(aDigits[i + startIndex], bDigits[i], ref carry);
         }
         i += startIndex;
         for (; i < aDigits.Length; i++)
         {
-            if (carry == 0) break;
-            ulong cur = (ulong)aDigits[i] + carry;
-            aDigits[i] = (uint)cur;
-            carry = (uint)(cur >> 32);
+            aDigits[i] = AddDigits(aDigits[i], 0, ref carry);
         }
     }
 
@@ -752,8 +679,6 @@ public sealed class BetterBigInteger : IBigInteger
             res.Add(GetDigitFromValue(rem));
         }
 
-        if (res[res.Count - 1] == '0') res.RemoveAt(res.Count - 1);
-
         if (IsNegative) res.Add('-');
 
         res.Reverse();
@@ -775,7 +700,7 @@ public sealed class BetterBigInteger : IBigInteger
         ulong carry = 0;
         for (int i = start; i >= 0; i--)
         {
-            ulong cur = (carry << 32) | aDigits[i];
+            ulong cur = (carry << NumOfBits) | aDigits[i];
             carry = cur % bDigit;
             aDigits[i] = (uint)(cur / bDigit);
         }
